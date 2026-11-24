@@ -11,7 +11,6 @@
 @media(max-width:400px){.drink-options{grid-template-columns:1fr}.quantity-row{grid-template-columns:1fr 95px}.hero{padding:28px 20px}.intro{font-size:14px}.choice-row{gap:7px}.choice span{padding:9px 11px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
 .organizer-logo{display:block;width:118px;height:auto}.nav a{margin-left:12px;text-align:right}
-.submit:disabled{opacity:.58;cursor:default}
 </style>
 </head>
 <body>
@@ -31,8 +30,8 @@
 <section id="rsvp">
 <h2 class="section-title">Ждём вас на празднике!</h2><p class="section-note">Заполните форму один раз. Если придёте с парой, укажите выбор для каждого гостя.</p>
 <div class="form-shell">
-<div class="form-top"><div><div class="step">Ответ гостя</div><h3>Подтвердите участие</h3><p>Версия для проверки оформления. Приём ответов пока отключён.</p></div><div class="price-tag">До 26 ноября</div></div>
-<form id="rsvpForm" method="post" action="#" target="submitFrame">
+<div class="form-top"><div><div class="step">Ответ гостя</div><h3>Подтвердите участие</h3><p>Выберите блюда и напитки для каждого гостя. Ответы попадут в таблицу.</p></div><div class="price-tag">До 26 ноября</div></div>
+<form id="rsvpForm" method="post" action="https://script.google.com/macros/s/AKfycbyaSe7dWSwU9FGXwXiXGMiTJb90Uc0OVrBuoDF7Ar7YQZVDQxw2ZVZ-I5blUzOeTpWejA/exec" target="submitFrame">
 <input type="hidden" name="receipt"><input type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px">
 <div class="field"><label for="guest1">Имя и фамилия гостя 1 *</label><input type="text" id="guest1" name="guest1" maxlength="120" placeholder="Как к вам обращаться" required></div>
 <fieldset class="field" style="border:0;padding:0"><legend>Вы придёте? *</legend><div class="choice-row"><label class="choice"><input type="radio" name="attendance" value="alone" checked><span>Одна / один</span></label><label class="choice"><input type="radio" name="attendance" value="pair"><span>С парой · + 8 000 ₽</span></label></div></fieldset>
@@ -52,7 +51,7 @@
 <div class="drink"><input type="radio" id="b1" name="drink2" value="Крепкий алкоголь"><label for="b1">Крепкий алкоголь (укажите в комментариях)</label></div><div class="drink"><input type="radio" id="b2" name="drink2" value="Белое вино"><label for="b2">Белое вино</label></div><div class="drink"><input type="radio" id="b3" name="drink2" value="Красное вино"><label for="b3">Красное вино</label></div><div class="drink"><input type="radio" id="b4" name="drink2" value="Шампанское"><label for="b4">Шампанское</label></div><div class="drink"><input type="radio" id="b5" name="drink2" value="Безалкогольное вино"><label for="b5">Безалкогольное вино</label></div><div class="drink"><input type="radio" id="b6" name="drink2" value="Безалкогольное пиво"><label for="b6">Безалкогольное пиво</label></div></div></div>
 <div class="field"><label>Количество напитка *</label><div class="choice-row quantity-options"><label class="choice"><input type="radio" name="quantity2" value="Полбутылки"><span>Полбутылки</span></label><label class="choice"><input type="radio" name="quantity2" value="Бутылка"><span>Бутылка</span></label><label class="choice"><input type="radio" name="quantity2" value="Напишу своё количество"><span>Напишу своё количество</span></label></div></div><div id="customQtyWrap2" class="field custom-quantity" hidden><label for="customQty2">Своё количество бутылок</label><input id="customQty2" name="customQty2" type="text" maxlength="80" placeholder="Укажите количество бутылок"></div>
 <div class="field"><label for="comment2">Комментарий к напитку</label><input id="comment2" name="comment2" type="text" maxlength="500" placeholder="Для крепкого алкоголя: виски, водка или Егермейстер"></div></div>
-<button class="submit" type="submit" disabled>Отправка пока недоступна</button><div id="demoNote" class="demo-note" role="status"></div>
+<button class="submit" type="submit">Отправить ответ <span aria-hidden="true">↗</span></button><div id="demoNote" class="demo-note" role="status"></div>
 </form><iframe name="submitFrame" id="submitFrame" title="Отправка ответа" hidden></iframe>
 </div></section>
 <section class="map-section" aria-labelledby="mapTitle">
@@ -67,6 +66,7 @@ const form = document.getElementById('rsvpForm');
 const note = document.getElementById('demoNote');
 const button = form.querySelector('button[type="submit"]');
 const receipt = form.elements.receipt;
+const submitFrame = document.getElementById('submitFrame');
 const customOption = 'Напишу своё количество';
 let timeout;
 let pending = false;
@@ -128,9 +128,23 @@ form.addEventListener('submit', event => {
   }, 25000);
 });
 
+function comesFromSubmission(source) {
+  try {
+    while (source && source !== window) {
+      if (source === submitFrame.contentWindow) return true;
+      const parent = source.parent;
+      if (parent === source) break;
+      source = parent;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 window.addEventListener('message', event => {
   const trusted = /^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+-)?script\.googleusercontent\.com)$/.test(event.origin);
-  if (!trusted || event.data?.kind !== 'pesni-rsvp' || !receipt.value || event.data.receipt !== receipt.value) return;
+  if (!trusted || !comesFromSubmission(event.source) || event.data?.kind !== 'pesni-rsvp' || !receipt.value || event.data.receipt !== receipt.value) return;
   clearTimeout(timeout);
   pending = false;
   button.disabled = false;
