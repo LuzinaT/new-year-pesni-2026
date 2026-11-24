@@ -11,6 +11,43 @@
 @media(max-width:400px){.drink-options{grid-template-columns:1fr}.quantity-row{grid-template-columns:1fr 95px}.hero{padding:28px 20px}.intro{font-size:14px}.choice-row{gap:7px}.choice span{padding:9px 11px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
 .organizer-logo{display:block;width:118px;height:auto}.nav a{margin-left:12px;text-align:right}
+.submission-dialog {
+  width: min(410px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  padding: 22px;
+  border: 1px solid #566946;
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--cream);
+  box-shadow: 0 18px 65px #0009;
+}
+.submission-dialog::backdrop { background: #050d0bd9; }
+.submission-dialog h3 { margin: 0 0 7px; font: 24px/1.15 var(--serif); }
+.submission-dialog p { margin: 0; color: var(--muted); font-size: 14px; }
+.submission-spinner {
+  width: 27px;
+  height: 27px;
+  margin-bottom: 13px;
+  border: 2px solid #344a42;
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: submission-spin .85s linear infinite;
+}
+@keyframes submission-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .submission-spinner { animation: none; } }
+.submission-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.submission-actions[hidden] { display: none; }
+.submission-actions button {
+  border: 1px solid #566946;
+  border-radius: 9px;
+  padding: 9px 12px;
+  background: #192a22;
+  color: var(--cream);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.submission-actions button.primary { background: var(--gold); border-color: var(--gold); color: #151d16; }
 </style>
 </head>
 <body>
@@ -53,6 +90,17 @@
 <div class="field"><label for="comment2">Комментарий к напитку</label><input id="comment2" name="comment2" type="text" maxlength="500" placeholder="Для крепкого алкоголя: виски, водка или Егермейстер"></div></div>
 <button class="submit" type="submit">Отправить ответ <span aria-hidden="true">↗</span></button><div id="demoNote" class="demo-note" role="status"></div>
 </form><iframe name="submitFrame" id="submitFrame" title="Отправка ответа" hidden></iframe>
+<dialog id="submissionDialog" class="submission-dialog" aria-labelledby="submissionTitle" aria-describedby="submissionText">
+  <div id="submissionSpinner" class="submission-spinner" aria-hidden="true" hidden></div>
+  <div role="status" aria-live="polite">
+    <h3 id="submissionTitle" tabindex="-1"></h3>
+    <p id="submissionText"></p>
+  </div>
+  <div id="submissionActions" class="submission-actions" hidden>
+    <button id="retrySubmission" class="primary" type="button" hidden>Повторить отправку</button>
+    <button id="closeSubmission" type="button">Готово</button>
+  </div>
+</dialog>
 </div></section>
 <section class="map-section" aria-labelledby="mapTitle">
   <h2 class="section-title" id="mapTitle">Как найти караоке-бар «ПЕСНИ»</h2>
@@ -67,10 +115,38 @@ const note = document.getElementById('demoNote');
 const button = form.querySelector('button[type="submit"]');
 const receipt = form.elements.receipt;
 const submitFrame = document.getElementById('submitFrame');
+const dialog = document.getElementById('submissionDialog');
+const dialogTitle = document.getElementById('submissionTitle');
+const dialogText = document.getElementById('submissionText');
+const spinner = document.getElementById('submissionSpinner');
+const actions = document.getElementById('submissionActions');
+const retryButton = document.getElementById('retrySubmission');
+const closeButton = document.getElementById('closeSubmission');
 const customOption = 'Напишу своё количество';
 let timeout;
 let pending = false;
 let lastFields = '';
+
+const submissionMessages = {
+  sending: {
+    title: 'Пожалуйста, подождите',
+    text: 'Ответ сохраняется. Не закрывайте страницу, пока не появится подтверждение.'
+  },
+  slow: {
+    title: 'Отправка занимает больше времени',
+    text: 'Подтверждение ещё не пришло. Можно подождать или повторить отправку с теми же данными.',
+    retry: true
+  },
+  success: {
+    title: 'Спасибо! Ваш ответ записан.',
+    text: 'Анкета сохранена.'
+  },
+  error: {
+    title: 'Не удалось подтвердить запись',
+    text: 'Ваши данные остались в анкете. Попробуйте отправить ответ ещё раз.',
+    retry: true
+  }
+};
 
 function syncFields() {
   const pair = form.elements.attendance.value === 'pair';
@@ -106,24 +182,63 @@ function showStatus(text) {
   note.classList.add('show');
 }
 
+function showSubmission(state) {
+  const message = submissionMessages[state];
+  const sending = state === 'sending';
+  dialogTitle.textContent = message.title;
+  dialogText.textContent = message.text;
+  spinner.hidden = !sending;
+  actions.hidden = sending;
+  retryButton.hidden = !message.retry;
+  closeButton.textContent = message.retry ? 'К анкете' : 'Готово';
+  closeButton.classList.toggle('primary', state === 'success');
+  if (!dialog.open) dialog.showModal();
+  if (sending) dialogTitle.focus();
+  else if (message.retry) retryButton.focus();
+  else closeButton.focus();
+}
+
+function formFingerprint() {
+  return JSON.stringify([...new FormData(form)].filter(([name]) => name !== 'receipt'));
+}
+
+function warnBeforeLeaving(event) {
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+function finishWaiting() {
+  clearTimeout(timeout);
+  pending = false;
+  button.disabled = false;
+  window.removeEventListener('beforeunload', warnBeforeLeaving);
+}
+
+dialog.addEventListener('cancel', event => {
+  if (pending) event.preventDefault();
+});
+closeButton.addEventListener('click', () => dialog.close());
+retryButton.addEventListener('click', () => form.requestSubmit(button));
+
 form.addEventListener('submit', event => {
   if (pending || !form.action.startsWith('https://script.google.com/macros/s/')) {
     event.preventDefault();
     if (!pending) showStatus('Приём ответов ещё не подключён.');
     return;
   }
-  const fields = [...new FormData(form)].filter(([name]) => name !== 'receipt');
-  const fingerprint = JSON.stringify(fields);
+  const fingerprint = formFingerprint();
   if (!receipt.value || fingerprint !== lastFields) {
     receipt.value = crypto.randomUUID();
     lastFields = fingerprint;
   }
   pending = true;
   button.disabled = true;
-  showStatus('Отправляем ответ…');
+  note.classList.remove('show');
+  showSubmission('sending');
+  window.addEventListener('beforeunload', warnBeforeLeaving);
   timeout = setTimeout(() => {
-    pending = false;
-    button.disabled = false;
+    finishWaiting();
+    showSubmission('slow');
     showStatus('Подтверждение пока не пришло. Можно повторить отправку.');
   }, 25000);
 });
@@ -145,16 +260,21 @@ function comesFromSubmission(source) {
 window.addEventListener('message', event => {
   const trusted = /^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+-)?script\.googleusercontent\.com)$/.test(event.origin);
   if (!trusted || !comesFromSubmission(event.source) || event.data?.kind !== 'pesni-rsvp' || !receipt.value || event.data.receipt !== receipt.value) return;
-  clearTimeout(timeout);
-  pending = false;
-  button.disabled = false;
+  finishWaiting();
   if (event.data.ok === true) {
-    form.reset();
+    const hasEdits = formFingerprint() !== lastFields;
     receipt.value = '';
+    if (hasEdits) {
+      showStatus('Предыдущий ответ записан. Новые изменения остались в анкете.');
+      return;
+    }
+    form.reset();
     syncFields();
-    showStatus('Спасибо! Ваш ответ записан.');
+    showSubmission('success');
+    showStatus(submissionMessages.success.title);
   } else {
-    showStatus('Не получилось записать ответ. Проверьте поля и попробуйте ещё раз.');
+    showSubmission('error');
+    showStatus(submissionMessages.error.title + '. ' + submissionMessages.error.text);
   }
 });
 </script></main><footer class="foot">26 декабря · Караоке-бар «ПЕСНИ» · Новогодний вечер</footer>
